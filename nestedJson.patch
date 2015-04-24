@@ -1,0 +1,110 @@
+commit 9ed22fcc043fafd0b0ed4c1ff052e038e04b8bc4
+Author: Lukasz Drynski
+Date:   Fri Apr 24 13:59:44 2015 +0100
+
+    added nested json structure
+
+diff --git a/src/main/scala/spike/spray/service/domain/Customer.scala b/src/main/scala/spike/spray/service/domain/Customer.scala
+index 417cd30..1b76fe5 100644
+--- a/src/main/scala/spike/spray/service/domain/Customer.scala
++++ b/src/main/scala/spike/spray/service/domain/Customer.scala
+@@ -8,5 +8,6 @@ case class Customer (
+   firstName: Option[String] = None,
+   middleName: Option[String] = None,
+   lastName: Option[String] = None,
+-  dateOfBirth: Option[Date] = None
++  dateOfBirth: Option[Date] = None,
++  journey: Option[Journey] = None
+ )
+diff --git a/src/main/scala/spike/spray/service/domain/Journey.scala b/src/main/scala/spike/spray/service/domain/Journey.scala
+new file mode 100644
+index 0000000..16f44d8
+--- /dev/null
++++ b/src/main/scala/spike/spray/service/domain/Journey.scala
+@@ -0,0 +1,11 @@
++package spike.spray.service.domain
++
++import java.util.Date
++
++case class Journey (
++  id: Option[Long] = None,
++  departureDate: Option[Date] = None,
++  destinationCountry: Option[String] = None,
++  countriesTransited: Option[TransitCountries] = None,
++  dateOfArrival: Option[Date] = None
++)
+diff --git a/src/main/scala/spike/spray/service/domain/TransitCountries.scala b/src/main/scala/spike/spray/service/domain/TransitCountries.scala
+new file mode 100644
+index 0000000..48e069b
+--- /dev/null
++++ b/src/main/scala/spike/spray/service/domain/TransitCountries.scala
+@@ -0,0 +1,6 @@
++package spike.spray.service.domain
++
++
++case class TransitCountries (
++  countryList: Option[Array[Map[String, Int]]] = None
++  )
+\ No newline at end of file
+diff --git a/src/main/scala/spike/spray/service/mapping/ETDJsonProtocol.scala b/src/main/scala/spike/spray/service/mapping/ETDJsonProtocol.scala
+index e11f53a..a2916e0 100644
+--- a/src/main/scala/spike/spray/service/mapping/ETDJsonProtocol.scala
++++ b/src/main/scala/spike/spray/service/mapping/ETDJsonProtocol.scala
+@@ -5,7 +5,7 @@ import spray.json.RootJsonFormat
+ import java.util.Date
+ import spray.json.JsValue
+ import spray.json.JsString
+-import spike.spray.service.domain.Customer
++import spike.spray.service.domain.{TransitCountries, Journey, Customer}
+ import akka.event.slf4j.SLF4JLogging
+ 
+ object ETDJsonProtocol extends DefaultJsonProtocol with SLF4JLogging{
+@@ -16,5 +16,8 @@ object ETDJsonProtocol extends DefaultJsonProtocol with SLF4JLogging{
+     def write(date: Date) =  JsString(formatter.format(date))
+   }
+ 
+-  implicit val customerFormat = jsonFormat6(Customer)
++  implicit val transitCountriesFormat = jsonFormat(TransitCountries, "countryName")
++  implicit val journeyFormat = jsonFormat5(Journey)
++  implicit val customerFormat = jsonFormat7(Customer)
++
+ }
+diff --git a/src/main/scala/spike/spray/service/rest/ETDService.scala b/src/main/scala/spike/spray/service/rest/ETDService.scala
+index 6958377..5b72118 100644
+--- a/src/main/scala/spike/spray/service/rest/ETDService.scala
++++ b/src/main/scala/spike/spray/service/rest/ETDService.scala
+@@ -1,11 +1,13 @@
+ package spike.spray.service.rest
+ 
+ import akka.actor.Actor
++import spray.http.HttpHeaders.Date
+ import spray.routing.{RequestContext, HttpService}
+ import spray.http.MediaTypes._
+ import akka.event.slf4j.SLF4JLogging
+ import spray.http.{StatusCode, StatusCodes}
+-import spike.spray.service.domain.{Failure, Customer}
++import spike.spray.service.domain.{TransitCountries, Journey, Failure, Customer}
++
+ 
+ 
+ // we don't implement our route structure directly in the service actor because
+@@ -85,7 +87,9 @@ trait ETDHttpService extends HttpService with SLF4JLogging {
+                   firstName = Some("John"),
+                   middleName = Some("T"),
+                   lastName = Some("Smith"),
+-                  dateOfBirth = None
++                  dateOfBirth = None,
++                  journey = Some(Journey(Some(123), None, Some(""),
++                    Some(TransitCountries(Some(Array(Map("Kiribati"->1, "Iraq"->2))))), None))
+                 )
+               )
+             }
+@@ -105,7 +109,7 @@ trait ETDHttpService extends HttpService with SLF4JLogging {
+ 
+     action match {
+       case Right(result: Customer) =>
+-        ctx.complete( result.toJson.compactPrint)
++        ctx.complete( result.toJson.prettyPrint)
+       case Left(error: Failure) =>
+         ctx.complete(error.getStatusCode, (Map("error" -> error.message)).toJson.compactPrint)
+       case _ =>
